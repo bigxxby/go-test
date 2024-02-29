@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test</title>
+</head>
+<body>
+    <h2>Send Data</h2>
+    <form id="myForm">
+        <label for="projectId">Project ID:</label><br>
+        <input type="text" id="projectId" name="projectId" required><br><br>
+        <label for="id">ID:</label><br>
+        <input type="text" id="id" name="id" required><br><br>
+        <label for="name">Name:</label><br>
+        <input type="text" id="name" name="name" required><br><br>
+        <label for="description">Description:</label><br>
+        <input type="text" id="description" name="description"><br><br>
+        <button type="button" onclick="sendGet()">Send GET</button>
+        <button type="button" onclick="sendPost()">Send POST</button>
+        <button type="button" onclick="sendPatch()">Send PATCH</button>
+        <button type="button" onclick="sendDelete()">Send DELETE</button>
+            
+    </form>
+    
+    <div id="response"></div>
+
+    <script>
+        function sendGet()  {
+            window.location.href = "/good/get";
+        }
+
+        function sendPost() {
+            var projectId = document.getElementById("projectId").value;
+            var name = document.getElementById("name").value;
+            fetch('/good/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ projectId: projectId, name: name }),
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById("response").innerText = data;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        function sendPatch() {
+            var id = document.getElementById("id").value;
+            var projectId = document.getElementById("projectId").value;
+            var name = document.getElementById("name").value;
+            var description = document.getElementById("description").value;
+            fetch('/good/update', {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: id, projectId: projectId,  name: name, description: description }),
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById("response").innerText = data;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        function sendDelete() {
+            var id = document.getElementById("id").value;
+            var projectId = document.getElementById("projectId").value;
+            fetch('/good/remove', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: id, projectId: projectId }),
+            })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById("response").innerText = data;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+    </script>
+     <style>
+    h2 {
+        text-align: center;
+    }
+
+form {
+    max-width: 400px;
+    margin: 0 auto;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+}
+
+label {
+    font-weight: bold;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+button {
+    padding: 10px 10px;
+    margin-right: 7px;
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+#response {
+    margin-top: 20px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: #f0f0f0;
+}
+
+     </style>
+</body>
+</html>
