@@ -1,6 +1,6 @@
-GoLang and PostgreSQL Application README
+Golang and PostgreSQL Application README
 
-This repository contains a simple GoLang application that interacts with a PostgreSQL database using Docker Compose. The application provides functionality to manage data related to 'goods' through a RESTful API.
+This repository contains a simple Golang application that interacts with a PostgreSQL database using Docker Compose. The application provides functionality to manage data related to 'goods' through a RESTful API.
 Prerequisites
 
     Docker
