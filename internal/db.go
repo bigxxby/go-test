@@ -188,11 +188,25 @@ func (s *SingletonDB) CheckIfGoodExists(id int, projectID int) (bool, error) {
 }
 
 func (s *SingletonDB) CreateGoods(projectID int, name string) (*Good, error) {
+	// Начинаем транзакцию
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("error beginning transaction: %v", err)
+	}
+
 	query := "INSERT INTO goods (project_id, name) VALUES ($1, $2) RETURNING id, project_id, name, description, priority, removed, created_at"
 	var good Good
-	err := s.db.QueryRow(query, projectID, name).Scan(&good.ID, &good.ProjectID, &good.Name, &good.Description, &good.Priority, &good.Removed, &good.CreatedAt)
+	err = tx.QueryRow(query, projectID, name).Scan(&good.ID, &good.ProjectID, &good.Name, &good.Description, &good.Priority, &good.Removed, &good.CreatedAt)
 	if err != nil {
-		return nil, err
+		// Если произошла ошибка при выполнении запроса, откатываем транзакцию и возвращаем ошибку
+		tx.Rollback()
+		return nil, fmt.Errorf("error inserting goods: %v", err)
+	}
+
+	// Коммитим транзакцию
+	if err := tx.Commit(); err != nil {
+		// Если произошла ошибка при коммите транзакции, возвращаем ошибку
+		return nil, fmt.Errorf("error committing transaction: %v", err)
 	}
 
 	fmt.Println("Data inserted successfully into goods table.")
@@ -200,11 +214,25 @@ func (s *SingletonDB) CreateGoods(projectID int, name string) (*Good, error) {
 }
 
 func (s *SingletonDB) UpdateGoods(projectID int, id int, name string, description string) (*Good, error) {
+	// Начинаем транзакцию
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("error beginning transaction: %v", err)
+	}
+
 	query := "UPDATE goods SET name = $1, description = $2, priority = priority + 1 WHERE id = $3 AND project_id = $4 RETURNING id, project_id, name, description, priority, removed, created_at"
 	var good Good
-	err := s.db.QueryRow(query, name, description, id, projectID).Scan(&good.ID, &good.ProjectID, &good.Name, &good.Description, &good.Priority, &good.Removed, &good.CreatedAt)
+	err = tx.QueryRow(query, name, description, id, projectID).Scan(&good.ID, &good.ProjectID, &good.Name, &good.Description, &good.Priority, &good.Removed, &good.CreatedAt)
 	if err != nil {
-		return nil, err
+		// Если произошла ошибка при выполнении запроса, откатываем транзакцию и возвращаем ошибку
+		tx.Rollback()
+		return nil, fmt.Errorf("error updating goods: %v", err)
+	}
+
+	// Коммитим транзакцию
+	if err := tx.Commit(); err != nil {
+		// Если произошла ошибка при коммите транзакции, возвращаем ошибку
+		return nil, fmt.Errorf("error committing transaction: %v", err)
 	}
 
 	fmt.Println("Data updated successfully in goods table.")
@@ -212,15 +240,23 @@ func (s *SingletonDB) UpdateGoods(projectID int, id int, name string, descriptio
 }
 
 func (s *SingletonDB) DeleteGoods(projectID int, id int) error {
+	// Начинаем транзакцию
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning transaction: %v", err)
+	}
+
 	query := "DELETE FROM goods WHERE project_id = $1 AND id = $2"
 
-	// Выполняем SQL-запрос с помощью экземпляра *sql.DB
-	_, err := s.db.Exec(query, projectID, id)
+	_, err = tx.Exec(query, projectID, id)
 	if err != nil {
-		// Если произошла ошибка при выполнении запроса, возвращаем ее
+		tx.Rollback()
 		return fmt.Errorf("error deleting goods: %v", err)
 	}
 
-	// Если запрос выполнен успешно, возвращаем nil (без ошибки)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %v", err)
+	}
+
 	return nil
 }
