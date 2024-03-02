@@ -3,8 +3,12 @@ package gotest
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"time"
+
+	"github.com/go-redis/redis"
 )
 
 // DBHandler - интерфейс для работы с базой данных.
@@ -25,12 +29,13 @@ type DBHandler interface {
 
 // SingletonDB - структура, реализующая интерфейс DBHandler.
 type SingletonDB struct {
-	db     *sql.DB
-	dbHost string
-	dbPort string
-	dbUser string
-	dbPass string
-	dbName string
+	db          *sql.DB
+	redisClient *redis.Client
+	dbHost      string
+	dbPort      string
+	dbUser      string
+	dbPass      string
+	dbName      string
 }
 
 // Connect - метод для подключения к базе данных.
@@ -122,7 +127,7 @@ func (s *SingletonDB) CreateIndex() error {
 }
 
 // InitDB - функция для инициализации подключения к базе данных.
-func InitDB(dbHost, dbPort, dbUser, dbPass, dbName string) (DBHandler, error) {
+func InitDB(dbHost, dbPort, dbUser, dbPass, dbName, redisAddr, redisPass string) (DBHandler, error) {
 	db := &SingletonDB{
 		dbHost: dbHost,
 		dbPort: dbPort,
@@ -130,14 +135,72 @@ func InitDB(dbHost, dbPort, dbUser, dbPass, dbName string) (DBHandler, error) {
 		dbPass: dbPass,
 		dbName: dbName,
 	}
+
+	// Инициализация клиента Redis
+	db.redisClient = redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: redisPass,
+		DB:       0,
+	})
+
 	if err := db.Connect(); err != nil {
 		return nil, err
 	}
-	log.Println("Подключение завершено")
+	log.Println("Подключение c redis завершено")
+
 	return db, nil
 }
+func (s *SingletonDB) CheckIfGoodExists(id int, projectID int) (bool, error) {
+	query := "SELECT EXISTS(SELECT 1 FROM goods WHERE id=$1 AND project_id=$2)"
+	var exists bool
+	err := s.db.QueryRow(query, id, projectID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
 
+	return exists, nil
+}
 func (s *SingletonDB) GetGoods() ([]Good, error) {
+	// Используем контекст по умолчанию
+
+	// Проверяем наличие данных в кеше Redis
+	// Проверяем наличие данных в кеше Redis
+	goodsJSON, err := s.redisClient.Get("goods").Result()
+
+	if err == redis.Nil {
+		// Если ключ отсутствует в кеше, получаем данные из базы данных
+		goodsFromDB, err := s.fetchGoodsFromDB()
+		if err != nil {
+			return nil, err
+		}
+
+		// Сохраняем данные в кеш Redis
+		goodsJSON, err := json.Marshal(goodsFromDB)
+		if err != nil {
+			return nil, err
+		}
+		err = s.redisClient.Set("goods", goodsJSON, 10*time.Minute).Err()
+		if err != nil {
+			return nil, err
+		}
+
+		return goodsFromDB, nil
+	} else if err != nil {
+		// Обработка ошибки при работе с кешем Redis
+		return nil, err
+	}
+
+	// Декодируем данные из JSON обратно в структуру Good
+	var goods []Good
+	err = json.Unmarshal([]byte(goodsJSON), &goods)
+	if err != nil {
+		return nil, err
+	}
+
+	return goods, nil
+}
+
+func (s *SingletonDB) fetchGoodsFromDB() ([]Good, error) {
 	rows, err := s.db.Query("SELECT id, project_id, name, description, priority, removed, created_at FROM goods")
 	if err != nil {
 		return nil, err
@@ -176,17 +239,6 @@ func (s *SingletonDB) GetProjects() ([]Project, error) {
 	return projects, nil
 }
 
-func (s *SingletonDB) CheckIfGoodExists(id int, projectID int) (bool, error) {
-	query := "SELECT EXISTS(SELECT 1 FROM goods WHERE id=$1 AND project_id=$2)"
-	var exists bool
-	err := s.db.QueryRow(query, id, projectID).Scan(&exists)
-	if err != nil {
-		return false, err
-	}
-
-	return exists, nil
-}
-
 func (s *SingletonDB) CreateGoods(projectID int, name string) (*Good, error) {
 	// Начинаем транзакцию
 	tx, err := s.db.Begin()
@@ -209,8 +261,36 @@ func (s *SingletonDB) CreateGoods(projectID int, name string) (*Good, error) {
 		return nil, fmt.Errorf("error committing transaction: %v", err)
 	}
 
+	// Обновляем данные в Redis после успешного добавления товара
+	err = s.updateGoodsCache()
+	if err != nil {
+		fmt.Println("Error updating goods cache:", err)
+	}
+
 	fmt.Println("Data inserted successfully into goods table.")
 	return &good, nil
+}
+
+func (s *SingletonDB) updateGoodsCache() error {
+	// Получаем все товары из базы данных
+	goods, err := s.fetchGoodsFromDB()
+	if err != nil {
+		return fmt.Errorf("error fetching goods from database: %v", err)
+	}
+
+	// Преобразуем данные в формат JSON
+	goodsJSON, err := json.Marshal(goods)
+	if err != nil {
+		return fmt.Errorf("error marshaling goods to JSON: %v", err)
+	}
+
+	// Обновляем данные в кеше Redis
+	err = s.redisClient.Set("goods", goodsJSON, 10*time.Minute).Err()
+	if err != nil {
+		return fmt.Errorf("error updating goods cache: %v", err)
+	}
+
+	return nil
 }
 
 func (s *SingletonDB) UpdateGoods(projectID int, id int, name string, description string) (*Good, error) {
@@ -235,7 +315,21 @@ func (s *SingletonDB) UpdateGoods(projectID int, id int, name string, descriptio
 		return nil, fmt.Errorf("error committing transaction: %v", err)
 	}
 
-	fmt.Println("Data updated successfully in goods table.")
+	// Обновляем данные в Redis
+	updatedGoodJSON, err := json.Marshal(good)
+	if err != nil {
+		return nil, err
+	}
+	err = s.redisClient.Set(fmt.Sprintf("good:%d", good.ID), updatedGoodJSON, 10*time.Minute).Err()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.updateGoodsCache()
+	if err != nil {
+		fmt.Println("Error updating goods cache:", err)
+	}
+	fmt.Println("Data updated successfully in goods table and Redis.")
 	return &good, nil
 }
 
@@ -247,16 +341,27 @@ func (s *SingletonDB) DeleteGoods(projectID int, id int) error {
 	}
 
 	query := "DELETE FROM goods WHERE project_id = $1 AND id = $2"
-
 	_, err = tx.Exec(query, projectID, id)
 	if err != nil {
 		tx.Rollback()
 		return fmt.Errorf("error deleting goods: %v", err)
 	}
 
+	// Коммитим транзакцию
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("error committing transaction: %v", err)
 	}
 
+	// Удаляем данные из Redis
+	key := fmt.Sprintf("good:%d", id)
+	err = s.redisClient.Del(key).Err()
+	if err != nil {
+		return fmt.Errorf("error deleting data from Redis: %v", err)
+	}
+	err = s.updateGoodsCache()
+	if err != nil {
+		fmt.Println("Error updating goods cache:", err)
+	}
+	fmt.Println("Data deleted successfully from goods table and Redis.")
 	return nil
 }

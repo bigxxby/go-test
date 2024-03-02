@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	gotest "gotest/internal"
 	"log"
 	"net/http"
@@ -26,7 +27,13 @@ var (
 )
 
 func main() {
-	db, err := gotest.InitDB(dbHost, dbPort, dbUser, dbPassword, dbName)
+	err := gotest.ConnectToRedis()
+	if err != nil {
+		fmt.Println("Ошибка при соединении с сервером Redis:", err)
+		return
+	}
+
+	db, err := gotest.InitDB(dbHost, dbPort, dbUser, dbPassword, dbName, "127.0.0.1:6379", "")
 	if err != nil {
 		panic(err)
 	}
