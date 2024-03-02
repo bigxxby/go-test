@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -20,13 +21,24 @@ var (
 )
 
 func main() {
-	err := gotest.ConnectToRedis()
+	// Подключение к Redis
+	var err error
+	for i := 0; i < 10; i++ {
+		err = gotest.ConnectToRedis()
+		if err == nil {
+			log.Println("Error connecting to redis: ", err)
+			break
+		}
+		fmt.Printf("Ошибка при соединении с сервером Redis: %v. Повторная попытка через 1 секунду\n", err)
+		time.Sleep(1 * time.Second)
+	}
 	if err != nil {
-		fmt.Println("Ошибка при соединении с сервером Redis:", err)
+		fmt.Println("Невозможно подключиться к серверу Redis:", err)
 		return
 	}
-
-	db, err := gotest.InitDB(dbHost, dbPort, dbUser, dbPassword, dbName, redisHost, "")
+	addr := redisHost + ":6379"
+	// Подключение к базе данных
+	db, err := gotest.InitDB(dbHost, dbPort, dbUser, dbPassword, dbName, addr, "")
 	if err != nil {
 		panic(err)
 	}

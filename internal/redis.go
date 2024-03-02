@@ -9,10 +9,13 @@ import (
 func ConnectToRedis() error {
 	// Создаем новый клиент Redis
 	client := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379", // Адрес сервера Redis
-		Password: "",               // Пароль, если используется аутентификация
-		DB:       0,                // Номер базы данных (по умолчанию 0)
+		Addr:     "redis:6379", // Адрес сервера Redis
+		Password: "",           // Пароль, если используется аутентификация
+		DB:       0,            // Номер базы данных (по умолчанию 0)
 	})
+
+	// Закрываем соединение с сервером Redis в случае ошибки или после использования
+	defer client.Close()
 
 	// Проверяем соединение с сервером Redis
 	pong, err := client.Ping().Result()
@@ -21,8 +24,5 @@ func ConnectToRedis() error {
 	}
 	fmt.Println("Соединение с сервером Redis установлено:", pong)
 
-	// Закрываем соединение с сервером Redis
-
-	defer client.Close()
 	return nil
 }
